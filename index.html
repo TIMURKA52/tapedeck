@@ -1,0 +1,1282 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TapeDeck: Кинопоиск</title>
+    
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.development.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap" rel="stylesheet">
+    
+    <style>
+        body { 
+            font-family: 'Inter', sans-serif; 
+            color: #e5e7eb; 
+            background: linear-gradient(135deg, #020617, #0f172a, #1e1b4b, #111827);
+            background-size: 400% 400%;
+            animation: gradientBG 25s ease infinite;
+            min-height: 100vh;
+            overflow-x: hidden;
+        }
+
+        .bg-noise {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            z-index: -1;
+            opacity: 0.035;
+            background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)'/%3E%3C/svg%3E");
+        }
+
+        @keyframes gradientBG {
+            0% { background-position: 0% 50%; }
+            50% { background-position: 100% 50%; }
+            100% { background-position: 0% 50%; }
+        }
+
+        .glass-panel {
+            background: rgba(15, 23, 42, 0.45);
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            box-shadow: 0 4px 30px rgba(0, 0, 0, 0.2);
+        }
+
+        .poster-overlay {
+            background: linear-gradient(to top, rgba(0,0,0,0.9) 0%, rgba(0,0,0,0.4) 50%, rgba(0,0,0,0) 100%);
+        }
+
+        .hero-overlay {
+            background: linear-gradient(to top, #020617 0%, rgba(2,6,23,0.8) 20%, rgba(0,0,0,0.4) 60%, rgba(0,0,0,0.2) 100%);
+        }
+
+        ::-webkit-scrollbar { width: 10px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: #4b5563; border-radius: 5px; }
+        
+        .play-btn:hover .play-icon {
+            transform: scale(1.1);
+        }
+
+        @keyframes rainbow {
+            0% { background-position: 0% 50%; }
+            50% { background-position: 100% 50%; }
+            100% { background-position: 0% 50%; }
+        }
+        
+        .rgb-text {
+            background: linear-gradient(270deg, #ff0000, #ff8800, #ffff00, #00ff00, #00ffff, #0000ff, #ff00ff, #ff0000);
+            background-size: 400% 400%;
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            color: transparent;
+            animation: rainbow 8s ease infinite;
+        }
+        
+        @keyframes shimmer {
+            0% { background-position: -200% center; }
+            100% { background-position: 200% center; }
+        }
+        
+        .shimmer-text {
+            background: linear-gradient(to right, #ffffff 0%, #ffffff 40%, #9ca3af 50%, #ffffff 60%, #ffffff 100%);
+            background-size: 200% auto;
+            color: #fff;
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            animation: shimmer 3s linear infinite;
+            text-shadow: 0 0 10px rgba(255,255,255,0.1);
+        }
+
+        @keyframes skeleton-loading {
+            0% { background-position: 200% 0; }
+            100% { background-position: -200% 0; }
+        }
+        
+        .skeleton-bg {
+            background: linear-gradient(90deg, rgba(255,255,255,0.03) 25%, rgba(255,255,255,0.08) 37%, rgba(255,255,255,0.03) 63%);
+            background-size: 400% 100%;
+            animation: skeleton-loading 1.4s ease infinite;
+        }
+
+        .nav-btn.active {
+            background: rgba(255, 255, 255, 0.1);
+            color: white;
+            border-bottom: 2px solid #ea580c;
+        }
+        
+        .modal-scroll::-webkit-scrollbar {
+            width: 6px;
+            height: 6px;
+        }
+        .modal-scroll::-webkit-scrollbar-track {
+            background: transparent;
+        }
+        .modal-scroll::-webkit-scrollbar-thumb {
+            background-color: rgba(255,255,255,0.2);
+            border-radius: 3px;
+        }
+
+        .stagger-item {
+            opacity: 0;
+            animation: fadeSlideUp 0.5s ease-out forwards;
+        }
+        
+        @keyframes fadeSlideUp {
+            from {
+                opacity: 0;
+                transform: translateY(20px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="bg-noise"></div>
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect, useRef } = React;
+
+        const SkeletonGridCard = () => {
+            return (
+                <div className="aspect-[2/3] rounded-xl overflow-hidden bg-gray-900 border border-white/5 relative">
+                    <div className="absolute inset-0 skeleton-bg"></div>
+                    <div className="absolute bottom-4 left-4 right-4 flex flex-col gap-2">
+                        <div className="h-4 bg-white/10 rounded w-3/4"></div>
+                        <div className="h-3 bg-white/10 rounded w-1/2"></div>
+                    </div>
+                </div>
+            );
+        };
+
+        const SkeletonListCard = () => {
+            return (
+                <div className="glass-panel rounded-xl overflow-hidden h-52 flex animate-pulse border border-white/5">
+                    <div className="w-32 md:w-44 bg-gray-800/50 skeleton-bg shrink-0"></div>
+                    <div className="p-5 flex flex-col gap-3 flex-grow relative">
+                        <div className="h-6 bg-white/10 rounded w-1/3 mb-2 skeleton-bg"></div>
+                        <div className="h-4 bg-white/10 rounded w-1/4 skeleton-bg"></div>
+                        <div className="mt-auto flex gap-3">
+                            <div className="h-10 bg-white/10 rounded flex-grow skeleton-bg"></div>
+                            <div className="h-10 w-10 bg-white/10 rounded skeleton-bg"></div>
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+        const ToastContainer = ({ toasts }) => (
+            <div className="fixed bottom-6 right-6 z-[100] flex flex-col gap-3 items-end pointer-events-none">
+                {toasts.map(toast => (
+                    <div 
+                        key={toast.id}
+                        className={`pointer-events-auto glass-panel px-6 py-4 rounded-xl border flex items-center gap-3 shadow-2xl backdrop-blur-xl transition-all duration-500 ease-in-out transform ${
+                            toast.closing ? 'translate-x-[120%] opacity-0' : 'translate-x-0 opacity-100 animate-in slide-in-from-bottom-5 fade-in duration-300'
+                        } ${
+                            toast.type === 'success' ? 'bg-green-900/60 border-green-500/30' : 
+                            toast.type === 'error' ? 'bg-red-900/60 border-red-500/30' : 
+                            'bg-slate-900/80 border-white/10'
+                        }`}
+                    >
+                        <span className="text-xl">{toast.type === 'success' ? '✅' : toast.type === 'error' ? '❌' : 'ℹ️'}</span>
+                        <span className="font-medium text-white tracking-wide">{toast.message}</span>
+                    </div>
+                ))}
+            </div>
+        );
+
+        const Badge = ({ children, type, className = "" }) => {
+            const colors = {
+                rating: "bg-green-600/90 text-white border border-green-500/50",
+                ratingLow: "bg-gray-600/90 text-white border border-gray-500/50",
+                year: "bg-gray-700/80 text-gray-300 border border-gray-600/50",
+                type: "bg-blue-600/90 text-white border border-blue-500/50 text-[10px] tracking-wider uppercase",
+                error: "bg-red-900/80 text-red-100 border border-red-800/50"
+            };
+            
+            let finalType = type;
+            if (type === 'rating' && parseFloat(children) < 7) {
+                finalType = 'ratingLow';
+            }
+
+            return (
+                <span className={`px-2.5 py-1 rounded text-sm font-bold backdrop-blur-sm shadow-sm ${colors[finalType] || "bg-gray-600"} ${className}`}>
+                    {children}
+                </span>
+            );
+        };
+
+        const LikeButton = ({ isFavorite, onToggle, className = "" }) => (
+            <button 
+                onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    onToggle();
+                }}
+                className={`w-8 h-8 flex items-center justify-center rounded-full transition-all duration-200 z-20 active:scale-90 ${className} ${
+                    isFavorite 
+                    ? 'bg-red-600/90 text-white shadow-lg shadow-red-500/30 scale-110' 
+                    : 'bg-black/40 text-gray-300 hover:bg-black/60 hover:text-white hover:scale-105 border border-white/10'
+                }`}
+                title={isFavorite ? "Убрать из избранного" : "В избранное"}
+            >
+                <svg className="w-4 h-4" fill={isFavorite ? "currentColor" : "none"} stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" />
+                </svg>
+            </button>
+        );
+
+        const HeroBanner = ({ movie, onOpenDetails, onToggleFavorite, isFavorite }) => {
+            const [imgError, setImgError] = useState(false);
+            
+            if (!movie) return null;
+
+            return (
+                <div className="relative w-full h-[60vh] md:h-[70vh] rounded-2xl overflow-hidden mb-10 group shadow-2xl border border-white/5 animate-in fade-in duration-700">
+                    <img 
+                        src={imgError ? "https://i.ibb.co/qF4vBxk7/4d5aac63-fd95-4d49-bad0-9cd6f8828a22.jpg" : movie.poster} 
+                        alt={movie.title}
+                        className="absolute inset-0 w-full h-full object-cover transition-transform duration-[20s] ease-linear group-hover:scale-110"
+                        onError={() => setImgError(true)}
+                    />
+                    <div className="absolute inset-0 hero-overlay"></div>
+                    
+                    <div className="absolute bottom-0 left-0 w-full p-6 md:p-12 flex flex-col justify-end items-start z-10">
+                        <div className="flex gap-2 mb-4 animate-in slide-in-from-bottom-4 duration-700 delay-100">
+                             {movie.rating && <Badge type="rating" className="text-lg px-3 py-1">{movie.rating}</Badge>}
+                             <Badge type="year" className="text-lg px-3 py-1">{movie.year}</Badge>
+                             <div className="bg-orange-600 text-white text-[10px] font-bold px-2 py-1 rounded uppercase tracking-wider flex items-center">#1 Топ</div>
+                        </div>
+                        
+                        <h1 className="text-4xl md:text-6xl font-extrabold text-white mb-2 leading-tight drop-shadow-lg max-w-4xl animate-in slide-in-from-bottom-4 duration-700 delay-200">
+                            {movie.title}
+                        </h1>
+                        
+                        {movie.genres && (
+                             <p className="text-gray-300 text-lg mb-8 font-medium max-w-2xl animate-in slide-in-from-bottom-4 duration-700 delay-300">
+                                {movie.genres}
+                             </p>
+                        )}
+                        
+                        <div className="flex flex-wrap gap-4 animate-in slide-in-from-bottom-4 duration-700 delay-400">
+                            <button 
+                                onClick={() => onOpenDetails(movie)}
+                                className="bg-orange-600 hover:bg-orange-500 text-white font-bold py-3 px-8 rounded-xl text-lg transition-all shadow-lg hover:shadow-orange-500/30 flex items-center gap-2 active:scale-95"
+                            >
+                                <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
+                                Смотреть сейчас
+                            </button>
+                            
+                            <button 
+                                onClick={() => onToggleFavorite(movie)}
+                                className={`py-3 px-6 rounded-xl text-lg font-bold transition-all border flex items-center gap-2 active:scale-95 backdrop-blur-md ${isFavorite ? 'bg-red-600/20 border-red-500/50 text-red-100' : 'bg-white/10 border-white/10 text-white hover:bg-white/20'}`}
+                            >
+                                <svg className="w-5 h-5" fill={isFavorite ? "currentColor" : "none"} stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" />
+                                </svg>
+                                {isFavorite ? 'В избранном' : 'В список'}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+        const ConfirmationModal = ({ onClose, onConfirm, title, text }) => (
+            <div className="fixed inset-0 z-[80] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200" onClick={onClose}>
+                <div className="glass-panel max-w-md w-full p-6 rounded-xl shadow-2xl relative animate-in zoom-in-95 duration-200 border border-white/10" onClick={e => e.stopPropagation()}>
+                    <button onClick={onClose} className="absolute top-4 right-4 text-gray-400 hover:text-white transition-colors p-1"><svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12"></path></svg></button>
+                    
+                    <div className="flex flex-col items-center text-center">
+                        <div className="w-12 h-12 bg-red-500/10 rounded-full flex items-center justify-center mb-4 text-red-400">
+                            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
+                        </div>
+                        <h2 className="text-xl font-bold mb-2 text-white">{title}</h2>
+                        <p className="text-gray-300 mb-6 text-sm">{text}</p>
+                        
+                        <div className="flex gap-3 w-full">
+                            <button 
+                                onClick={onClose}
+                                className="flex-1 px-4 py-2.5 rounded-lg bg-white/5 hover:bg-white/10 text-white font-medium transition-colors border border-white/5 active:scale-95 transition-transform"
+                            >
+                                Нет, оставить
+                            </button>
+                            <button 
+                                onClick={onConfirm}
+                                className="flex-1 px-4 py-2.5 rounded-lg bg-red-600 hover:bg-red-500 text-white font-bold transition-colors shadow-lg shadow-red-900/20 active:scale-95 transition-transform"
+                            >
+                                Да, очистить
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        );
+
+        const MovieDetailModal = ({ movie, onClose, kpKey, onSwitchMovie }) => {
+            const [details, setDetails] = useState(null);
+            const [similars, setSimilars] = useState([]); 
+            const [loading, setLoading] = useState(true);
+
+            const playerUrl = `https://kinopoisk.cx/film/${movie.id}`;
+
+            useEffect(() => {
+                const fetchDetails = async () => {
+                    if (!kpKey) {
+                        setLoading(false);
+                        return;
+                    }
+                    try {
+                        setLoading(true);
+                        const [detailsRes, similarsRes] = await Promise.all([
+                            fetch(`https://kinopoiskapiunofficial.tech/api/v2.2/films/${movie.id}`, {
+                                method: 'GET',
+                                headers: { 'X-API-KEY': kpKey, 'Content-Type': 'application/json' },
+                            }),
+                            fetch(`https://kinopoiskapiunofficial.tech/api/v2.2/films/${movie.id}/similars`, {
+                                method: 'GET',
+                                headers: { 'X-API-KEY': kpKey, 'Content-Type': 'application/json' },
+                            })
+                        ]);
+
+                        if (detailsRes.ok) {
+                            const data = await detailsRes.json();
+                            setDetails(data);
+                        }
+                        
+                        if (similarsRes.ok) {
+                            const similarsData = await similarsRes.json();
+                            setSimilars(similarsData.items || []);
+                        }
+
+                    } catch (e) {
+                        console.error("Error fetching details", e);
+                    } finally {
+                        setLoading(false);
+                    }
+                };
+                fetchDetails();
+            }, [movie.id, kpKey]);
+
+            return (
+                <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-in fade-in duration-200" onClick={onClose}>
+                    <div 
+                        className="bg-[#1f2937] w-full max-w-4xl rounded-2xl shadow-2xl relative overflow-hidden flex flex-col md:flex-row max-h-[90vh] border border-white/10"
+                        onClick={e => e.stopPropagation()}
+                    >
+                        <button 
+                            onClick={onClose}
+                            className="absolute top-4 right-4 z-10 p-2 bg-black/50 hover:bg-black/70 rounded-full text-white transition-colors active:scale-90"
+                        >
+                            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+                        </button>
+
+                        <div className="md:w-2/5 h-64 md:h-auto relative shrink-0">
+                            <img 
+                                src={movie.poster} 
+                                alt={movie.title} 
+                                className="w-full h-full object-cover"
+                            />
+                            <div className="absolute inset-0 bg-gradient-to-t from-[#1f2937] via-transparent to-transparent md:bg-gradient-to-r md:from-transparent md:to-[#1f2937]"></div>
+                        </div>
+
+                        <div className="md:w-3/5 p-6 md:p-8 flex flex-col overflow-y-auto modal-scroll bg-[#1f2937]">
+                            <h2 className="text-3xl font-bold text-white mb-2 leading-tight">{movie.title}</h2>
+                            {movie.originalTitle && <p className="text-gray-400 text-lg mb-4 italic">{movie.originalTitle}</p>}
+
+                            <div className="flex flex-wrap gap-2 mb-6">
+                                {movie.rating && <Badge type="rating">{movie.rating}</Badge>}
+                                {movie.year && <Badge type="year">{movie.year}</Badge>}
+                                {details && details.filmLength && <Badge type="year">{details.filmLength} мин.</Badge>}
+                                {details && details.ratingAgeLimits && <span className="px-2 py-0.5 border border-white/20 rounded text-xs text-gray-300 font-bold">{details.ratingAgeLimits.replace('age', '')}+</span>}
+                            </div>
+
+                            {loading ? (
+                                <div className="space-y-3">
+                                    <div className="h-4 bg-gray-700/50 rounded w-3/4 skeleton-bg"></div>
+                                    <div className="h-4 bg-gray-700/50 rounded w-full skeleton-bg"></div>
+                                    <div className="h-4 bg-gray-700/50 rounded w-5/6 skeleton-bg"></div>
+                                </div>
+                            ) : (
+                                <div className="space-y-4 text-gray-300">
+                                    {details?.description ? (
+                                        <p className="leading-relaxed text-sm md:text-base">{details.description}</p>
+                                    ) : (
+                                        <p className="italic text-gray-500">Описание отсутствует.</p>
+                                    )}
+
+                                    <div className="grid grid-cols-[100px_1fr] gap-y-2 text-sm mt-4">
+                                        {details?.countries && (
+                                            <>
+                                                <span className="text-gray-500">Страна:</span>
+                                                <span className="text-white">{details.countries.map(c => c.country).join(', ')}</span>
+                                            </>
+                                        )}
+                                        {details?.genres && (
+                                            <>
+                                                <span className="text-gray-500">Жанры:</span>
+                                                <span className="text-white">{details.genres.map(g => g.genre).join(', ')}</span>
+                                            </>
+                                        )}
+                                        {details?.slogan && (
+                                            <>
+                                                <span className="text-gray-500">Слоган:</span>
+                                                <span className="text-white italic">«{details.slogan}»</span>
+                                            </>
+                                        )}
+                                    </div>
+                                </div>
+                            )}
+
+                            <div className="mt-8 pt-6 border-t border-white/10 flex flex-col gap-3">
+                                <a 
+                                    href={playerUrl} 
+                                    target="_blank" 
+                                    rel="noopener noreferrer"
+                                    className="w-full bg-orange-600 hover:bg-orange-500 text-white font-bold py-4 rounded-xl transition-all shadow-lg hover:shadow-orange-500/30 flex items-center justify-center gap-3 text-lg active:scale-95"
+                                >
+                                    <svg className="w-6 h-6" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
+                                    Смотреть фильм
+                                </a>
+                            </div>
+
+                            {similars.length > 0 && (
+                                <div className="mt-8 border-t border-white/10 pt-6">
+                                    <h3 className="text-lg font-bold text-white mb-4">Похожие фильмы</h3>
+                                    <div className="flex gap-4 overflow-x-auto pb-4 modal-scroll">
+                                        {similars.map(sim => (
+                                            <div
+                                                key={sim.filmId}
+                                                className="w-28 shrink-0 cursor-pointer group hover:scale-105 transition-transform"
+                                                onClick={() => onSwitchMovie({
+                                                    id: sim.filmId,
+                                                    title: sim.nameRu || sim.nameEn || sim.originalName,
+                                                    poster: sim.posterUrlPreview
+                                                })}
+                                            >
+                                                <div className="w-full h-40 rounded-lg overflow-hidden bg-gray-800 mb-2 border border-white/5 group-hover:border-orange-500/50 transition-colors">
+                                                    <img src={sim.posterUrlPreview} alt={sim.nameRu} className="w-full h-full object-cover" />
+                                                </div>
+                                                <p className="text-xs text-gray-300 font-medium line-clamp-2 group-hover:text-white transition-colors">{sim.nameRu || sim.nameEn || sim.originalName}</p>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+        const MovieCardList = ({ data, isFavorite, onToggleFavorite, onOpenDetails }) => {
+            const [imgError, setImgError] = useState(false);
+            
+            const playerUrl = `https://kinopoisk.cx/film/${data.id}`;
+            const searchUrl = `https://yandex.ru/video/search?text=${encodeURIComponent('смотреть онлайн фильм ' + data.title)}`;
+
+            return (
+                <div className="glass-panel rounded-xl overflow-hidden hover:border-orange-500/30 transition-all group flex h-full shadow-lg hover:shadow-2xl hover:shadow-orange-500/10 hover:bg-slate-800/60 duration-300 relative active:scale-[0.99]">
+                    <div 
+                        onClick={() => onOpenDetails(data)}
+                        className="w-32 md:w-44 shrink-0 bg-gray-900/50 relative overflow-hidden flex items-center justify-center cursor-pointer group/poster"
+                    >
+                        <img 
+                            src={imgError ? "https://i.ibb.co/qF4vBxk7/4d5aac63-fd95-4d49-bad0-9cd6f8828a22.jpg" : data.poster} 
+                            alt={data.title} 
+                            className={`w-full h-full object-cover transition-opacity ${imgError ? 'opacity-20 grayscale' : 'opacity-90 group-hover/poster:opacity-100'}`}
+                            onError={() => setImgError(true)} 
+                        />
+                        {imgError && (
+                            <div className="absolute inset-0 flex flex-col items-center justify-center p-1 pointer-events-none">
+                                <span className="text-xl mb-1 opacity-40 text-gray-400">📷</span>
+                                <span className="text-xs font-bold text-gray-500 uppercase text-center leading-tight tracking-wider">Нет фото</span>
+                            </div>
+                        )}
+                        <div className="absolute top-2 left-2 z-20" onClick={e => e.stopPropagation()}>
+                            <LikeButton isFavorite={isFavorite} onToggle={() => onToggleFavorite(data)} />
+                        </div>
+                    </div>
+
+                    <div className="p-5 flex flex-col gap-3 flex-grow bg-gradient-to-r from-transparent to-black/20 relative">
+                        <div className="flex justify-between items-start gap-4 cursor-pointer" onClick={() => onOpenDetails(data)}>
+                            <div>
+                                <h3 className="text-xl font-bold leading-tight text-white group-hover:text-orange-400 transition-colors drop-shadow-md">
+                                    {data.title}
+                                </h3>
+                                {data.originalTitle && (
+                                    <p className="text-sm text-gray-400 italic mt-1">{data.originalTitle}</p>
+                                )}
+                                {data.genres && (
+                                    <p className="text-xs text-orange-400/90 mt-2 font-medium bg-orange-900/10 border border-orange-500/10 px-2 py-1 rounded inline-block">
+                                        {data.genres}
+                                    </p>
+                                )}
+                            </div>
+                            <div className="flex flex-col items-end gap-1.5 shrink-0">
+                                {data.rating && <Badge type="rating">{data.rating}</Badge>}
+                                <span className="text-sm text-gray-500 font-medium">{data.year}</span>
+                            </div>
+                        </div>
+                        
+                        <div className="mt-auto pt-3 flex items-center gap-3 border-t border-white/5">
+                             <a 
+                                href={playerUrl} 
+                                target="_blank" 
+                                rel="noopener noreferrer"
+                                className="play-btn flex-grow bg-orange-600/90 hover:bg-orange-500 text-white text-sm font-bold py-3 px-4 rounded-lg transition-all flex items-center justify-center gap-2 shadow-lg hover:shadow-orange-500/30 backdrop-blur-sm border border-orange-500/20 active:scale-95"
+                            >
+                                <svg className="w-4 h-4 play-icon transition-transform" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
+                                Смотреть
+                            </a>
+                            
+                            <a 
+                                href={data.url} 
+                                target="_blank" 
+                                rel="noopener noreferrer"
+                                className="bg-[#141414] hover:bg-[#ff6600] text-[#ff6600] hover:text-white p-2 rounded-lg transition-all border border-gray-600/30 w-10 h-10 flex items-center justify-center group/kp active:scale-95"
+                                title="Открыть на Кинопоиске"
+                            >
+                                <span className="font-black text-lg group-hover/kp:scale-110 transition-transform">K</span>
+                            </a>
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+        const GridMovieCard = ({ data, isFavorite, onToggleFavorite, onOpenDetails, onRemove }) => {
+            const [imgError, setImgError] = useState(false);
+
+            return (
+                <div 
+                    onClick={() => onOpenDetails(data)}
+                    className="relative group aspect-[2/3] rounded-xl overflow-hidden bg-gray-900 shadow-xl hover:shadow-2xl hover:shadow-orange-500/20 hover:scale-[1.02] transition-all duration-300 border border-white/5 hover:border-orange-500/40 cursor-pointer active:scale-[0.98]"
+                >
+                    <div className="block w-full h-full">
+                        <img 
+                            src={imgError ? "https://i.ibb.co/qF4vBxk7/4d5aac63-fd95-4d49-bad0-9cd6f8828a22.jpg" : data.poster} 
+                            alt={data.title}
+                            className={`w-full h-full object-cover transition-transform duration-700 group-hover:scale-110 ${imgError ? 'opacity-20' : ''}`}
+                            onError={() => setImgError(true)}
+                        />
+                        
+                        {imgError && (
+                            <div className="absolute inset-0 flex flex-col items-center justify-center z-0 pointer-events-none">
+                                <span className="text-4xl mb-2 opacity-30 text-gray-400">📷</span>
+                                <span className="text-sm font-bold text-gray-500 uppercase tracking-widest">Нет фото</span>
+                            </div>
+                        )}
+                        
+                        <div className="absolute inset-0 poster-overlay opacity-80 group-hover:opacity-100 transition-opacity flex flex-col justify-end p-4">
+                            <div className={`absolute right-3 flex flex-col gap-1 items-end pointer-events-none transition-all duration-300 ${onRemove ? 'top-12' : 'top-3'}`}>
+                                {data.rating && data.rating !== 'null' && (
+                                    <div className="flex items-center gap-1">
+                                        <span className={`text-sm font-bold px-2 py-0.5 rounded bg-black/60 backdrop-blur-md border ${parseFloat(data.rating) >= 7 ? 'text-green-400 border-green-500/30' : 'text-gray-300 border-gray-500/30'}`}>
+                                            ★ {data.rating}
+                                        </span>
+                                    </div>
+                                )}
+                            </div>
+
+                            <div className="transform translate-y-1 group-hover:translate-y-0 transition-transform duration-300">
+                                <h3 className="text-base md:text-lg font-bold text-white leading-tight drop-shadow-md line-clamp-2 mb-1">
+                                    {data.title}
+                                </h3>
+                                {data.genres && (
+                                    <p className="text-[10px] uppercase tracking-wider text-orange-400/90 font-bold mb-1 truncate">
+                                        {data.genres}
+                                    </p>
+                                )}
+                                <div className="flex items-center justify-between">
+                                    <span className="text-sm text-gray-400 font-medium">{data.year}</span>
+                                    {data.originalTitle && <span className="text-xs text-gray-500 truncate max-w-[60%]">{data.originalTitle}</span>}
+                                </div>
+                            </div>
+                        </div>
+
+                        <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity duration-300 bg-black/20 backdrop-blur-[1px] pointer-events-none">
+                            <div className="px-4 py-2 bg-white/10 backdrop-blur-md border border-white/20 rounded-full text-white text-sm font-bold flex items-center gap-2 transform scale-90 group-hover:scale-100 transition-transform">
+                                <span>ℹ️ Подробнее</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div className="absolute top-3 left-3 z-30 opacity-0 group-hover:opacity-100 transition-opacity duration-300" onClick={e => e.stopPropagation()}>
+                         <LikeButton isFavorite={isFavorite} onToggle={() => onToggleFavorite(data)} />
+                    </div>
+
+                    {onRemove && (
+                        <button
+                            onClick={(e) => {
+                                e.stopPropagation();
+                                onRemove(data);
+                            }}
+                            className="absolute top-2 right-2 z-30 w-8 h-8 flex items-center justify-center rounded-full bg-black/60 text-gray-400 hover:text-white hover:bg-red-600/80 transition-all border border-white/10 shadow-lg active:scale-90"
+                            title="Удалить из истории"
+                        >
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12"></path>
+                            </svg>
+                        </button>
+                    )}
+                </div>
+            );
+        };
+
+        const InfoModal = ({ onClose }) => {
+            return (
+                <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200" onClick={onClose}>
+                    <div className="glass-panel max-w-lg w-full p-8 rounded-2xl shadow-2xl relative animate-in zoom-in-95 duration-200 border border-white/10" onClick={e => e.stopPropagation()}>
+                        <button onClick={onClose} className="absolute top-5 right-5 text-gray-400 hover:text-white transition-colors p-1 active:scale-90"><svg className="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12"></path></svg></button>
+                        <h2 className="text-2xl font-bold mb-6 text-white flex items-center gap-3"><span>ℹ️</span> Информация</h2>
+                        <div className="space-y-5 text-gray-300 text-base leading-relaxed">
+                            <div className="bg-orange-500/10 border border-orange-500/20 p-4 rounded-xl text-orange-200"><p className="font-medium">Для наилучшего просмотра рекомендуется использовать плеер <span className="text-orange-400 font-bold">Alloha (обычно 1-й плеер)</span>.</p></div>
+                            
+                            <a href="https://t.me/tapedeck_f" target="_blank" className="flex items-center gap-3 p-4 rounded-xl bg-[#229ED9]/10 border border-[#229ED9]/20 hover:bg-[#229ED9]/20 transition-all group no-underline active:scale-95">
+                                 <div className="w-10 h-10 rounded-full bg-[#229ED9] flex items-center justify-center text-white shrink-0 group-hover:scale-110 transition-transform shadow-lg shadow-blue-900/20">
+                                    <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24"><path d="M11.944 0A12 12 0 0 0 0 12a12 12 0 0 0 12 12 12 12 0 0 0 12-12A12 12 0 0 0 12 0a12 12 0 0 0-.056 0zm4.962 7.224c.1-.002.321.023.465.14a.506.506 0 0 1 .171.325c.016.093.036.3.029.402-.02.043-1.235 5.293-1.921 7.28-.316.918-.758 1.155-1.258 1.155-.588 0-1.077-.282-1.742-.718-1.127-.738-1.579-1.037-2.73-1.787-1.321-.861-.531-1.396.307-2.247.214-.216 3.654-3.345 3.725-3.627.01-.043-.005-.187-.066-.254-.061-.067-.184-.063-.264-.041-.098.027-1.945 1.251-5.467 3.622-.525.353-.997.525-1.42.516-.465-.009-1.36-.263-2.028-.479-.817-.265-1.465-.405-1.408-.855.029-.228.353-.462.969-.701 3.797-1.653 6.326-2.743 7.587-3.27 3.615-1.503 4.368-1.765 4.857-1.774z"/></svg>
+                                 </div>
+                                 <div>
+                                    <div className="font-bold text-white group-hover:text-[#229ED9] transition-colors">Telegram канал</div>
+                                    <div className="text-xs text-blue-200/70">Новости и обновления TapeDeck</div>
+                                 </div>
+                            </a>
+
+                            <p>В отдельных случаях поиск и загрузка контента могут занимать до 10 секунд.</p>
+                            <div className="p-5 bg-black/20 rounded-xl border border-white/5 text-sm text-gray-400 space-y-3">
+                                <p>Проект не хранит и не распространяет пиратский контент. Все права на материалы принадлежат их законным владельцам.</p>
+                                <p>Для удаления незаконного контента обращайтесь к первоисточнику. Я не несу ответственности за содержание, размещенное на сторонних ресурсах.</p>
+                                <div className="border-t border-white/5 pt-3 mt-3">За API благодарность <a href="https://kinopoiskapiunofficial.tech" target="_blank" className="text-blue-400 hover:text-blue-300 hover:underline transition-colors">kinopoiskapiunofficial.tech</a></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+        const TOP_TABS = [
+            { id: 'TOP_100_POPULAR_FILMS', label: 'Популярное' },
+            { id: 'TOP_250_BEST_FILMS', label: 'Топ 250' }
+        ];
+
+        const ScrollToTop = () => {
+            const [isVisible, setIsVisible] = useState(false);
+
+            useEffect(() => {
+                const toggleVisibility = () => {
+                    if (window.pageYOffset > 300) {
+                        setIsVisible(true);
+                    } else {
+                        setIsVisible(false);
+                    }
+                };
+
+                window.addEventListener("scroll", toggleVisibility);
+                return () => window.removeEventListener("scroll", toggleVisibility);
+            }, []);
+
+            const scrollToTop = () => {
+                window.scrollTo({
+                    top: 0,
+                    behavior: "smooth"
+                });
+            };
+
+            return (
+                <button 
+                    onClick={scrollToTop}
+                    className={`fixed bottom-24 right-6 z-40 bg-orange-600 hover:bg-orange-500 text-white p-3 rounded-full shadow-lg transition-all duration-300 transform ${isVisible ? 'translate-y-0 opacity-100' : 'translate-y-10 opacity-0 pointer-events-none'}`}
+                >
+                    <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 10l7-7m0 0l7 7m-7-7v18"></path></svg>
+                </button>
+            );
+        };
+
+        const App = () => {
+            const [activeView, setActiveView] = useState('search'); 
+            const [kpKey, setKpKey] = useState(localStorage.getItem('kp_key') || '');
+            const [query, setQuery] = useState('');
+            const [searchResults, setSearchResults] = useState([]);
+
+            const [toasts, setToasts] = useState([]);
+
+            const showToast = (message, type = 'info') => {
+                const id = Date.now() + Math.random(); 
+                
+                setToasts(prev => [...prev, { id, message, type, closing: false }]);
+                
+                setTimeout(() => {
+                    setToasts(prev => prev.map(t => t.id === id ? { ...t, closing: true } : t));
+                }, 4500);
+
+                setTimeout(() => {
+                    setToasts(prev => prev.filter(t => t.id !== id));
+                }, 5000);
+            };
+            
+            const [topResults, setTopResults] = useState([]);
+            const [activeTopTab, setActiveTopTab] = useState('TOP_100_POPULAR_FILMS');
+            const [topPage, setTopPage] = useState(1);
+            const [topTotalPages, setTopTotalPages] = useState(0);
+            const [topLoading, setTopLoading] = useState(false);
+            const [loadingMore, setLoadingMore] = useState(false);
+            
+            const [favorites, setFavorites] = useState(() => {
+                const saved = localStorage.getItem('kp_favorites');
+                return saved ? JSON.parse(saved) : [];
+            });
+
+            const [history, setHistory] = useState(() => {
+                const saved = localStorage.getItem('kp_history');
+                return saved ? JSON.parse(saved) : [];
+            });
+            
+            const [selectedMovie, setSelectedMovie] = useState(null);
+            
+            const [showClearHistoryConfirm, setShowClearHistoryConfirm] = useState(false);
+            const [showClearFavoritesConfirm, setShowClearFavoritesConfirm] = useState(false);
+
+            const [loading, setLoading] = useState(false);
+            const [error, setError] = useState(null);
+            const [showSettings, setShowSettings] = useState(!kpKey);
+            const [showInfo, setShowInfo] = useState(false);
+
+            useEffect(() => { localStorage.setItem('kp_key', kpKey); }, [kpKey]);
+            useEffect(() => { localStorage.setItem('kp_favorites', JSON.stringify(favorites)); }, [favorites]);
+            useEffect(() => { localStorage.setItem('kp_history', JSON.stringify(history)); }, [history]);
+            
+            useEffect(() => {
+                window.scrollTo(0, 0);
+            }, [activeView]);
+
+            useEffect(() => {
+                if (activeView === 'top' && kpKey) {
+                    setTopPage(1);
+                    fetchTopMovies(activeTopTab, 1);
+                }
+            }, [activeTopTab, kpKey, activeView]);
+
+            const fetchTopMovies = async (type, page = 1) => {
+                if (!kpKey) return;
+                
+                const isFirstPage = page === 1;
+                if (isFirstPage) {
+                    setTopLoading(true);
+                } else {
+                    setLoadingMore(true);
+                }
+
+                try {
+                    const response = await fetch(
+                        `https://kinopoiskapiunofficial.tech/api/v2.2/films/top?type=${type}&page=${page}`,
+                        {
+                            method: 'GET',
+                            headers: { 'X-API-KEY': kpKey, 'Content-Type': 'application/json' },
+                        }
+                    );
+                    if (!response.ok) throw new Error("Ошибка загрузки топа");
+                    const data = await response.json();
+                    
+                    setTopTotalPages(data.pagesCount);
+                    
+                    const normalized = data.films.map(film => ({
+                        id: film.filmId,
+                        title: film.nameRu || film.nameEn,
+                        originalTitle: film.nameEn,
+                        year: film.year,
+                        rating: film.rating && film.rating !== 'null' ? film.rating : null,
+                        poster: film.posterUrlPreview,
+                        genres: film.genres ? film.genres.slice(0, 3).map(g => g.genre).join(', ') : ''
+                    }));
+
+                    if (isFirstPage) {
+                        setTopResults(normalized);
+                    } else {
+                        setTopResults(prev => {
+                            const existingIds = new Set(prev.map(p => p.id));
+                            const newItems = normalized.filter(item => !existingIds.has(item.id));
+                            return [...prev, ...newItems];
+                        });
+                    }
+                } catch (e) {
+                    console.error(e);
+                } finally {
+                    setTopLoading(false);
+                    setLoadingMore(false);
+                }
+            };
+
+            const handleLoadMore = () => {
+                const nextPage = topPage + 1;
+                setTopPage(nextPage);
+                fetchTopMovies(activeTopTab, nextPage);
+            };
+
+            const performSearch = async (searchQuery) => {
+                 if (!searchQuery.trim()) return;
+                
+                if (!kpKey) {
+                    setError("Сначала введите API ключ (кнопка справа сверху)");
+                    setShowSettings(true);
+                    return;
+                }
+
+                setLoading(true);
+                setError(null);
+                setSearchResults([]);
+                setActiveView('search');
+
+                try {
+                    const kpResponse = await fetch(
+                        `https://kinopoiskapiunofficial.tech/api/v2.1/films/search-by-keyword?keyword=${encodeURIComponent(searchQuery)}`, 
+                        {
+                            method: 'GET',
+                            headers: { 'X-API-KEY': kpKey, 'Content-Type': 'application/json' },
+                        }
+                    );
+
+                    if (!kpResponse.ok) {
+                        if (kpResponse.status === 401) throw new Error("Ключ не подходит или пустой.");
+                        if (kpResponse.status === 402) throw new Error("Лимит запросов исчерпан.");
+                        throw new Error(`Ошибка: ${kpResponse.status}`);
+                    }
+                    
+                    const kpData = await kpResponse.json();
+
+                    if (!kpData.films || kpData.films.length === 0) {
+                        setError("Фильмы не найдены.");
+                        setLoading(false);
+                        return;
+                    }
+
+                    setSearchResults(kpData.films.map(film => ({
+                        id: film.filmId,
+                        title: film.nameRu || film.nameEn,
+                        originalTitle: film.nameEn,
+                        year: film.year,
+                        rating: film.rating !== 'null' ? film.rating : null,
+                        url: `https://www.kinopoisk.ru/film/${film.filmId}/`,
+                        poster: film.posterUrlPreview,
+                        genres: film.genres ? film.genres.slice(0, 3).map(g => g.genre).join(', ') : ''
+                    })));
+
+                } catch (err) {
+                    setError(err.message);
+                } finally {
+                    setLoading(false);
+                }
+            };
+
+            const handleSearch = (e) => {
+                e.preventDefault();
+                performSearch(query);
+            };
+
+            const clearSearch = () => {
+                setQuery('');
+                setSearchResults([]);
+                setError(null);
+            };
+
+            const toggleFavorite = (movie) => {
+                const isAlreadyFavorite = favorites.some(f => f.id === movie.id);
+                
+                if (isAlreadyFavorite) {
+                    setFavorites(prev => prev.filter(f => f.id !== movie.id));
+                    showToast(`"${movie.title}" удален из коллекции`, 'info');
+                } else {
+                    setFavorites(prev => [movie, ...prev]);
+                    showToast(`"${movie.title}" добавлен в коллекцию`, 'success');
+                }
+            };
+
+            const addToHistory = (movie) => {
+                setHistory(prev => {
+                    const filtered = prev.filter(item => item.id !== movie.id);
+                    return [movie, ...filtered].slice(0, 20);
+                });
+            };
+
+            const removeFromHistory = (movie) => {
+                setHistory(prev => prev.filter(item => item.id !== movie.id));
+            };
+
+            const requestClearHistory = () => {
+                setShowClearHistoryConfirm(true);
+            };
+
+            const performClearHistory = () => {
+                setHistory([]);
+                setShowClearHistoryConfirm(false);
+                showToast('История просмотров очищена', 'info');
+            };
+
+            const requestClearFavorites = () => {
+                setShowClearFavoritesConfirm(true);
+            };
+
+            const performClearFavorites = () => {
+                setFavorites([]);
+                setShowClearFavoritesConfirm(false);
+                showToast('Коллекция очищена', 'info');
+            };
+
+            const handleOpenDetails = (movie) => {
+                addToHistory(movie);
+                setSelectedMovie(movie);
+            };
+
+            const isFav = (id) => favorites.some(f => f.id === id);
+
+            return (
+                <div className="min-h-screen pb-20">
+                    <header className="border-b border-white/5 bg-slate-900/60 backdrop-blur-xl sticky top-0 z-50 shadow-lg">
+                        <div className="max-w-7xl mx-auto px-6 py-5 flex flex-col md:flex-row justify-between items-center gap-5">
+                            <div className="flex items-center gap-8">
+                                <div className="flex items-center gap-4 cursor-pointer active:scale-95 transition-transform" onClick={() => setActiveView('search')}>
+                                    <img src="https://i.ibb.co/qF4vBxk7/4d5aac63-fd95-4d49-bad0-9cd6f8828a22.jpg" alt="Logo" className="w-12 h-12 rounded-xl shadow-lg object-cover border border-white/10" />
+                                    <h1 className="text-2xl font-bold tracking-tight rgb-text drop-shadow-sm hidden sm:block">TapeDeck</h1>
+                                </div>
+
+                                <nav className="flex items-center bg-white/5 rounded-xl p-1.5 border border-white/5 overflow-x-auto max-w-[250px] md:max-w-none no-scrollbar">
+                                    <button 
+                                        onClick={() => setActiveView('search')}
+                                        className={`whitespace-nowrap px-5 py-2.5 rounded-lg text-base font-medium transition-all duration-200 active:scale-95 ${activeView === 'search' ? 'bg-orange-600 text-white shadow-lg shadow-orange-500/20' : 'text-gray-400 hover:text-white hover:bg-white/5'}`}
+                                    >
+                                        🔍 Поиск
+                                    </button>
+                                    <button 
+                                        onClick={() => setActiveView('top')}
+                                        className={`whitespace-nowrap px-5 py-2.5 rounded-lg text-base font-medium transition-all duration-200 active:scale-95 ${activeView === 'top' ? 'bg-orange-600 text-white shadow-lg shadow-orange-500/20' : 'text-gray-400 hover:text-white hover:bg-white/5'}`}
+                                    >
+                                        🏆 Топы
+                                    </button>
+                                    <button 
+                                        onClick={() => setActiveView('favorites')}
+                                        className={`whitespace-nowrap px-5 py-2.5 rounded-lg text-base font-medium transition-all duration-200 active:scale-95 ${activeView === 'favorites' ? 'bg-orange-600 text-white shadow-lg shadow-orange-500/20' : 'text-gray-400 hover:text-white hover:bg-white/5'}`}
+                                    >
+                                        ❤️ Избранное
+                                    </button>
+                                </nav>
+                            </div>
+                            
+                            <div className="flex items-center gap-3">
+                                <button onClick={() => setShowInfo(true)} className="text-sm md:text-base flex items-center gap-2 transition-colors px-4 py-2.5 rounded-lg border border-white/5 text-gray-300 hover:text-white hover:bg-white/10 hover:border-white/20 backdrop-blur-md active:scale-95">
+                                    ℹ️ Инфо
+                                </button>
+                                <button onClick={() => setShowSettings(!showSettings)} className={`text-sm md:text-base flex items-center gap-2 transition-colors px-4 py-2.5 rounded-lg border active:scale-95 ${!kpKey ? 'border-red-500/50 bg-red-900/10 text-red-400 animate-pulse' : 'border-transparent text-gray-400 hover:text-white hover:bg-white/5'}`}>
+                                    ⚙️ API-ключ
+                                </button>
+                            </div>
+                        </div>
+
+                        <div className={`grid transition-all duration-700 ease-[cubic-bezier(0.4,0,0.2,1)] ${showSettings ? 'grid-rows-[1fr] opacity-100' : 'grid-rows-[0fr] opacity-0'}`}>
+                            <div className="overflow-hidden">
+                                <div className="glass-panel border-b border-white/5 p-8 shadow-2xl">
+                                    <div className="max-w-3xl mx-auto">
+                                        <div className="bg-black/20 p-8 rounded-2xl border border-white/5">
+                                            <div className="flex items-center justify-between mb-5">
+                                                <label className="text-xl font-bold text-orange-400">Кинопоиск</label>
+                                                <span className="text-sm bg-orange-900/30 text-orange-200 px-3 py-1 rounded border border-orange-500/20">Лимит: 500 запросов/день</span>
+                                            </div>
+                                            <input 
+                                                type="text" 
+                                                value={kpKey}
+                                                onChange={(e) => {
+                                                    const val = e.target.value;
+                                                    setKpKey(val);
+                                                    if (val.length === 36) {
+                                                        setShowSettings(false);
+                                                        showToast('API-ключ сохранен', 'success');
+                                                    }
+                                                }}
+                                                placeholder="API-ключ"
+                                                className="w-full bg-slate-900/50 border border-slate-700/50 rounded-xl px-5 py-4 text-base text-white focus:border-orange-500 outline-none transition-colors mb-5 backdrop-blur-sm"
+                                            />
+                                            <div className="text-base text-gray-400 space-y-3 bg-slate-900/30 p-5 rounded-xl border border-white/5">
+                                                <p className="font-semibold text-gray-300 mb-3">Инструкция:</p>
+                                                <ol className="list-decimal list-inside space-y-2 ml-1 text-gray-400">
+                                                    <li>Зарегистрируйтесь на <a href="https://kinopoiskapiunofficial.tech" target="_blank" className="text-orange-400 hover:underline">kinopoiskapiunofficial.tech</a></li>
+                                                    <li>Зайдите в профиль и скопируйте API-ключ</li>
+                                                </ol>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </header>
+
+                    <main className="max-w-7xl mx-auto px-6 mt-10">
+                        {activeView === 'search' ? (
+                            <div className="animate-in fade-in duration-300">
+                                <div className="max-w-3xl mx-auto mb-12">
+                                    <form onSubmit={handleSearch} className="relative group z-10">
+                                        <div className="absolute -inset-1 bg-gradient-to-r from-orange-600 via-red-500 to-purple-600 rounded-xl blur opacity-20 group-hover:opacity-40 transition duration-1000 group-hover:duration-200"></div>
+                                        <div className="relative flex shadow-2xl">
+                                            <input 
+                                                type="text" 
+                                                value={query}
+                                                onChange={(e) => setQuery(e.target.value)}
+                                                placeholder="Найти фильм или сериал..."
+                                                className="block w-full bg-slate-900/90 border border-slate-700/50 text-white py-4 px-8 rounded-l-xl focus:outline-none focus:ring-0 placeholder-slate-500 text-xl backdrop-blur-xl"
+                                            />
+                                            {query && (
+                                                <button type="button" onClick={clearSearch} className="bg-slate-900/90 border-t border-b border-slate-700/50 text-gray-400 hover:text-white px-4 transition-colors">✕</button>
+                                            )}
+                                            <button 
+                                                type="submit"
+                                                disabled={loading}
+                                                className="bg-slate-800/80 hover:bg-slate-700/80 text-white font-bold py-3 px-8 rounded-r-xl border border-l-0 border-slate-700/50 transition-colors disabled:opacity-50 backdrop-blur-xl text-lg active:scale-95"
+                                            >
+                                                {loading ? '...' : 'Найти'}
+                                            </button>
+                                        </div>
+                                    </form>
+                                </div>
+
+                                {error && (
+                                    <div className="glass-panel border-red-800/50 text-red-200 p-6 rounded-xl mb-10 text-center animate-pulse shadow-lg shadow-red-900/10 max-w-2xl mx-auto text-lg">
+                                        {error}
+                                    </div>
+                                )}
+
+                                <div className="space-y-5 max-w-4xl mx-auto">
+                                    {loading ? (
+                                        Array.from({ length: 4 }).map((_, i) => (
+                                            <div key={i} className="animate-pulse">
+                                                <SkeletonListCard />
+                                            </div>
+                                        ))
+                                    ) : searchResults.length > 0 ? (
+                                        searchResults.map((item, index) => (
+                                            <div 
+                                                key={item.id} 
+                                                className="stagger-item h-52"
+                                                style={{ animationDelay: `${index * 0.05}s` }}
+                                            >
+                                                <MovieCardList 
+                                                    data={item} 
+                                                    isFavorite={isFav(item.id)}
+                                                    onToggleFavorite={toggleFavorite}
+                                                    onOpenDetails={handleOpenDetails}
+                                                />
+                                            </div>
+                                        ))
+                                    ) : (
+                                        !query && !error && (
+                                            <>
+                                                {history.length === 0 ? (
+                                                    <div className="text-center py-24 opacity-50">
+                                                        <div className="text-7xl mb-5">📼</div>
+                                                        <p className="text-gray-400 text-xl">Введите название фильма, чтобы начать просмотр</p>
+                                                    </div>
+                                                ) : (
+                                                    <div className="mt-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
+                                                        <div className="flex items-center justify-between mb-6">
+                                                            <h2 className="text-2xl font-bold text-white flex items-center gap-3">
+                                                                🕒 История просмотров
+                                                            </h2>
+                                                            <button 
+                                                                onClick={requestClearHistory}
+                                                                className="text-sm text-gray-400 hover:text-red-400 transition-colors px-3 py-1 rounded-md hover:bg-red-900/10 border border-transparent hover:border-red-900/20 active:scale-95"
+                                                            >
+                                                                Очистить историю
+                                                            </button>
+                                                        </div>
+                                                        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
+                                                            {history.map((item, index) => (
+                                                                <div 
+                                                                    key={item.id} 
+                                                                    className="stagger-item"
+                                                                    style={{ animationDelay: `${index * 0.05}s` }}
+                                                                >
+                                                                    <GridMovieCard 
+                                                                        data={item}
+                                                                        isFavorite={isFav(item.id)}
+                                                                        onToggleFavorite={toggleFavorite}
+                                                                        onOpenDetails={handleOpenDetails}
+                                                                        onRemove={removeFromHistory}
+                                                                    />
+                                                                </div>
+                                                            ))}
+                                                        </div>
+                                                    </div>
+                                                )}
+                                            </>
+                                        )
+                                    )}
+                                </div>
+                            </div>
+                        ) : activeView === 'top' ? (
+                            <div className="animate-in fade-in duration-500">
+                                {!kpKey ? (
+                                    <div className="text-center py-24 bg-black/20 rounded-2xl border border-white/5 backdrop-blur-sm">
+                                        <div className="text-6xl mb-5">🔐</div>
+                                        <h3 className="text-2xl font-bold text-white mb-3">Введите API ключ</h3>
+                                        <p className="text-gray-400 mb-8 max-w-lg mx-auto text-lg">Для отображения топов и новинок необходимо указать ваш персональный ключ Кинопоиска в настройках.</p>
+                                        <button onClick={() => setShowSettings(true)} className="bg-orange-600 hover:bg-orange-500 text-white px-8 py-3 rounded-full font-bold shadow-lg shadow-orange-500/20 transition-all transform hover:scale-105 active:scale-95 text-lg">
+                                            Ввести ключ
+                                        </button>
+                                    </div>
+                                ) : (
+                                    <>
+                                        <div className="flex justify-center mb-10 gap-3 flex-wrap">
+                                            {TOP_TABS.map(tab => (
+                                                <button
+                                                    key={tab.id}
+                                                    onClick={() => setActiveTopTab(tab.id)}
+                                                    className={`px-6 py-2.5 rounded-full text-base font-bold transition-all duration-300 border active:scale-95 ${
+                                                        activeTopTab === tab.id 
+                                                            ? 'bg-orange-600 text-white border-orange-500 shadow-lg shadow-orange-500/30 scale-105' 
+                                                            : 'bg-slate-800/50 text-gray-400 border-white/5 hover:bg-slate-700/50 hover:text-white'
+                                                    }`}
+                                                >
+                                                    {tab.label}
+                                                </button>
+                                            ))}
+                                        </div>
+
+                                        {topLoading ? (
+                                            <div className="space-y-8">
+                                                <div className="w-full h-[60vh] bg-gray-900 rounded-2xl animate-pulse"></div>
+                                                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-6 md:gap-8">
+                                                    {[...Array(10)].map((_, i) => (
+                                                        <SkeletonGridCard key={i} />
+                                                    ))}
+                                                </div>
+                                            </div>
+                                        ) : (
+                                            <>
+                                                {topResults.length > 0 && (
+                                                    <HeroBanner 
+                                                        movie={topResults[0]} 
+                                                        onOpenDetails={handleOpenDetails}
+                                                        onToggleFavorite={toggleFavorite}
+                                                        isFavorite={isFav(topResults[0].id)}
+                                                    />
+                                                )}
+
+                                                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-6 md:gap-8 pb-12">
+                                                    {topResults.slice(1).map((item, index) => (
+                                                        <div 
+                                                            key={item.id} 
+                                                            className="stagger-item"
+                                                            style={{ animationDelay: `${index * 0.05}s` }}
+                                                        >
+                                                            <GridMovieCard 
+                                                                data={item} 
+                                                                isFavorite={isFav(item.id)}
+                                                                onToggleFavorite={toggleFavorite}
+                                                                onOpenDetails={handleOpenDetails}
+                                                            />
+                                                        </div>
+                                                    ))}
+                                                </div>
+
+                                                {topResults.length > 0 && topPage < topTotalPages && (
+                                                    <div className="flex justify-center pt-4 pb-16">
+                                                        <button 
+                                                            onClick={handleLoadMore}
+                                                            disabled={loadingMore}
+                                                            className="bg-slate-800 hover:bg-slate-700 text-white font-bold py-4 px-14 rounded-full border border-white/10 transition-all flex items-center gap-3 disabled:opacity-50 hover:scale-105 active:scale-95 shadow-lg shadow-black/30 text-lg"
+                                                        >
+                                                            {loadingMore ? (
+                                                                <>
+                                                                    <svg className="animate-spin -ml-1 mr-1 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                                                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                                                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                                                    </svg>
+                                                                    Загрузка...
+                                                                </>
+                                                            ) : (
+                                                                'Ещё'
+                                                            )}
+                                                        </button>
+                                                    </div>
+                                                )}
+                                            </>
+                                        )}
+                                    </>
+                                )}
+                            </div>
+                        ) : (
+                             <div className="animate-in fade-in duration-500">
+                                <div className="flex items-center justify-between mb-8">
+                                    <h2 className="text-3xl font-bold text-white flex items-center gap-3">
+                                        ❤️ Ваша коллекция
+                                        <span className="text-xl bg-slate-800/80 px-4 py-1 rounded-full font-black shimmer-text border border-white/10 shadow-lg shadow-white/5">
+                                            {favorites.length}
+                                        </span>
+                                    </h2>
+                                    {favorites.length > 0 && (
+                                        <button 
+                                            onClick={requestClearFavorites}
+                                            className="text-sm text-gray-400 hover:text-red-400 transition-colors px-3 py-1 rounded-md hover:bg-red-900/10 border border-transparent hover:border-red-900/20 active:scale-95"
+                                        >
+                                            Очистить
+                                        </button>
+                                    )}
+                                </div>
+                                
+                                {favorites.length === 0 ? (
+                                    <div className="text-center py-24 bg-black/20 rounded-2xl border border-white/5 backdrop-blur-sm">
+                                        <div className="text-7xl mb-5 opacity-40">🕸️</div>
+                                        <h3 className="text-2xl font-bold text-white mb-3">Здесь пока пусто</h3>
+                                        <p className="text-gray-400 mb-8 max-w-lg mx-auto text-lg">Добавляйте фильмы и сериалы в избранное, нажимая на сердечко.</p>
+                                        <button onClick={() => setActiveView('top')} className="bg-orange-600 hover:bg-orange-500 text-white px-8 py-3 rounded-full font-bold shadow-lg shadow-orange-500/20 transition-all transform hover:scale-105 active:scale-95 text-lg">
+                                            Найти что-нибудь
+                                        </button>
+                                    </div>
+                                ) : (
+                                    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-6 md:gap-8 pb-12">
+                                        {favorites.map((item, index) => (
+                                            <div 
+                                                key={item.id} 
+                                                className="stagger-item"
+                                                style={{ animationDelay: `${index * 0.05}s` }}
+                                            >
+                                                <GridMovieCard 
+                                                    data={item} 
+                                                    isFavorite={true}
+                                                    onToggleFavorite={toggleFavorite}
+                                                    onOpenDetails={handleOpenDetails}
+                                                />
+                                            </div>
+                                        ))}
+                                    </div>
+                                )}
+                             </div>
+                        )}
+                    </main>
+
+                    {showInfo && <InfoModal onClose={() => setShowInfo(false)} />}
+                    {showClearHistoryConfirm && <ConfirmationModal title="Очистить историю?" text="Вы уверены, что хотите удалить все сохраненные фильмы из истории просмотров? Это действие нельзя отменить." onClose={() => setShowClearHistoryConfirm(false)} onConfirm={performClearHistory} />}
+                    {showClearFavoritesConfirm && <ConfirmationModal title="Очистить избранное?" text="Вы уверены, что хотите удалить все фильмы из вашей коллекции? Это действие нельзя отменить." onClose={() => setShowClearFavoritesConfirm(false)} onConfirm={performClearFavorites} />}
+                    {selectedMovie && <MovieDetailModal movie={selectedMovie} onClose={() => setSelectedMovie(null)} kpKey={kpKey} onSwitchMovie={handleOpenDetails} />}
+                    
+                    <ToastContainer toasts={toasts} />
+                    <ScrollToTop />
+                </div>
+            );
+        };
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>
