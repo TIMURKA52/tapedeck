@@ -331,7 +331,7 @@
             const [similars, setSimilars] = useState([]); 
             const [loading, setLoading] = useState(true);
 
-            const playerUrl = `https://fz1-1hfz98w.troutcdn.site/${movie.id}`;
+            const playerUrl = `https://fzg-0o83txs.troutcdn.site/${movie.id}`;
 
             useEffect(() => {
                 const fetchDetails = async () => {
@@ -485,7 +485,7 @@
         const MovieCardList = ({ data, isFavorite, onToggleFavorite, onOpenDetails }) => {
             const [imgError, setImgError] = useState(false);
             
-            const playerUrl = `https://kinopoisk.cx/film/${data.id}`;
+            const playerUrl = `https://fzg-0o83txs.troutcdn.site/film/${data.id}`;
             const searchUrl = `https://yandex.ru/video/search?text=${encodeURIComponent('смотреть онлайн фильм ' + data.title)}`;
 
             return (
